@@ -1,1 +1,2 @@
-ddscord.py
+discord.py
+requests
