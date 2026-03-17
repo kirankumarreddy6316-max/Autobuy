@@ -1,22 +1,21 @@
 import discord, json, os, random, requests, asyncio
 from discord.ext import commands
-from discord import app_commands
-from discord.ui import Button, View
 from flask import Flask, request
 from threading import Thread
 
-# === Load sensitive keys from environment variables ===
-TOKEN = os.getenv("DISCORD_TOKEN")
+# === ENV ===
+TOKEN = os.getenv("TOKEN")
 NOW_API_KEY = os.getenv("NOW_API_KEY")
 
-# === Intents & bot setup ===
+# === BOT ===
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# === Load config & credits ===
+# === CONFIG ===
 with open("config.json") as f:
     config = json.load(f)
 
+# === DATA ===
 def load_data(path):
     if not os.path.exists(path):
         return {}
@@ -28,163 +27,243 @@ def save_data(path, data):
         json.dump(data, f, indent=4)
 
 credits = load_data("data/credits.json")
+vouches = load_data("data/vouches.json")
 
-# === Stock functions ===
-def count_stock(file):
-    try:
-        with open(file) as f:
-            return len(f.readlines())
-    except:
-        return 0
+# === MEMORY ===
+order_channels = {}
+closed_tickets = {}
+processed_orders = set()
 
-def get_stock_item(file):
-    try:
-        with open(file) as f:
-            lines = f.readlines()
-        if not lines:
-            return "Out of Stock"
-        item = lines[0]
-        with open(file, "w") as f:
-            f.writelines(lines[1:])
-        return item.strip()
-    except:
-        return "Out of Stock"
+# === PRODUCTS ===
+prices = {
+    "Netflix": 3,
+    "Spotify": 2.5,
+    "Canva": 5,
+    "ChatGPT": 9,
+    "Auto Advertise 1M": 3,
+    "Auto Advertise 1M Reply": 5,
+    "Auto Advertise Lifetime": 8,
+    "Nitro Gen": 8,
+    "Nitro Boosts 1M": 3,
+    "Nitro Boosts 3M": 6,
+    "Custom Bots": 5,
+    "Self Bots": 5,
+    "Token Gen": 5,
+    "USDT Flasher": 5,
+    "Auto Chat": 0.2,
+    "Auto Vouch": 0.3,
+    "Members": 1,
+    "Robux": 5,
+    "CC Gen": 5,
+    "PayPal Gen": 5
+}
 
-# === Ready event ===
+# === STOCK ===
+def get_stock(product):
+    path = f"stock/{product.lower()}.txt"
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        lines = f.readlines()
+    if not lines:
+        return None
+    item = lines[0]
+    with open(path, "w") as f:
+        f.writelines(lines[1:])
+    return item.strip()
+
+# === READY ===
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print("Bot Ready")
 
-# === /stock command ===
-@bot.tree.command(name="stock")
-async def stock(interaction: discord.Interaction):
-    embed = discord.Embed(title="📦 Stock Status", color=0x00ff99)
-    embed.add_field(
-        name="Accounts",
-        value=f"Netflix: {count_stock('stock/netflix.txt')}\nSpotify: {count_stock('stock/spotify.txt')}\nCanva: {count_stock('stock/canva.txt')}\nChatGPT: {count_stock('stock/chatgpt.txt')}",
-        inline=False
-    )
-    embed.add_field(
-        name="Digital",
-        value=f"Robux: {config['robux_stock']}\nBoosts: {config['boost_stock']}",
-        inline=False
-    )
-    embed.add_field(
-        name="Services",
-        value="Nitro Gen: ∞\nToken Gen: ∞\nCC Gen: ∞\nPayPal Gen: ∞",
-        inline=False
-    )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# === /credits command ===
-@bot.tree.command(name="credits")
-async def credits_cmd(interaction: discord.Interaction):
-    user = str(interaction.user.id)
-    user_data = credits.get(user, {"online":0,"offline":0})
-    embed = discord.Embed(title="💳 Your Credits", color=0x3498db)
-    embed.add_field(name="Online", value=f"{user_data['online']}k")
-    embed.add_field(name="Offline", value=f"{user_data['offline']}k")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# === /panel command ===
+# === PANEL ===
 @bot.tree.command(name="panel")
 async def panel(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("No permission", ephemeral=True)
-
     embed = discord.Embed(
-        title="🛒 AutoBuy Shop",
-        description="Fast • Secure • Automated",
-        color=0x5865F2
+        title="⚡ 〘🤖〙𝗔𝘂𝘁𝗼 𝗕𝘂𝘆",
+        description=(
+            "Welcome to our automatic purchase system!\n\n"
+            "• Select product\n• Pay\n• Get instantly\n\n"
+            "No refunds after delivery."
+        ),
+        color=0x0ff0fc
     )
-    embed.set_image(url=config["animated_gif_url"])
 
-    view = View()
+    view = discord.ui.View()
 
-    async def buy_callback(i):
-        await i.response.send_message("Select product (system continues…)", ephemeral=True)
+    async def open_ticket(i):
+        category = discord.utils.get(i.guild.categories, name="TICKETS")
+        channel = await i.guild.create_text_channel(
+            name=f"ticket-{i.user.name}",
+            category=category
+        )
+        await channel.set_permissions(i.user, read_messages=True, send_messages=True)
+        await channel.send(i.user.mention)
+        await send_buy_panel(channel)
+        await i.response.send_message("✅ Ticket created", ephemeral=True)
 
-    btn = Button(label="Buy", style=discord.ButtonStyle.green)
-    btn.callback = buy_callback
+    btn = discord.ui.Button(label="Open Ticket", style=discord.ButtonStyle.green)
+    btn.callback = open_ticket
     view.add_item(btn)
 
     await interaction.response.send_message(embed=embed, view=view)
 
-# === Delivery function ===
-async def deliver_product(user, product, stock_file=None):
-    if stock_file:
-        item = get_stock_item(stock_file)
-    else:
-        item = "Unlimited / Auto-generated item"
+# === BUY PANEL ===
+async def send_buy_panel(channel):
+    embed = discord.Embed(title="Select Product", color=0x0ff0fc)
+    await channel.send(embed=embed, view=ProductView())
+    await channel.send("Controls:", view=TicketControls())
 
-    embed = discord.Embed(title=f"✅ {product} Delivered", color=0x2ecc71)
-    embed.add_field(name="Details", value=item, inline=False)
-    embed.set_image(url=config["proof_gif_url"])
+# === PRODUCT VIEW ===
+class ProductView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
 
-    await user.send(embed=embed)
+        select = discord.ui.Select(
+            placeholder="Select product",
+            options=[discord.SelectOption(label=p) for p in prices.keys()]
+        )
 
-# === Robux stock update ===
-def remove_robux(amount):
-    config["robux_stock"] -= amount
-    with open("config.json", "w") as f:
-        json.dump(config, f, indent=4)
+        async def callback(interaction):
+            product = select.values[0]
+            price = prices[product]
 
-# === Credits update ===
-def add_credit(user, amount, type_):
-    user = str(user)
-    if user not in credits:
-        credits[user] = {"online":0,"offline":0}
-    credits[user][type_] += amount
-    save_data("data/credits.json", credits)
+            invoice = create_invoice(product, price, interaction.user.id)
+            order_channels[str(interaction.user.id)] = interaction.channel.id
 
-# === NOWPayments create invoice ===
-def create_nowpayment_charge(product, price, buyer_id):
+            await interaction.response.send_message(
+                f"💳 Pay here:\n{invoice}\n\n⏳ Waiting for payment...",
+                ephemeral=False
+            )
+
+        select.callback = callback
+        self.add_item(select)
+
+# === TICKET CONTROLS ===
+class TicketControls(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.channel.send("❌ Order cancelled")
+        await asyncio.sleep(3)
+        await interaction.channel.delete()
+
+    @discord.ui.button(label="🔒 Close", style=discord.ButtonStyle.grey)
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        closed_tickets[interaction.user.id] = interaction.channel.name
+        await interaction.channel.send("🔒 Closing in 10 seconds...")
+        await asyncio.sleep(10)
+        await interaction.channel.delete()
+
+# === REOPEN ===
+@bot.tree.command(name="reopen")
+async def reopen(interaction: discord.Interaction):
+    name = closed_tickets.get(interaction.user.id)
+    if not name:
+        return await interaction.response.send_message("❌ No ticket", ephemeral=True)
+
+    category = discord.utils.get(interaction.guild.categories, name="TICKETS")
+    channel = await interaction.guild.create_text_channel(name=name, category=category)
+
+    await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
+    await send_buy_panel(channel)
+
+    await interaction.response.send_message("✅ Reopened", ephemeral=True)
+
+# === INVOICE ===
+def create_invoice(product, price, user_id):
     url = "https://api.nowpayments.io/v1/invoice"
-    headers = {"x-api-key": NOW_API_KEY, "Content-Type":"application/json"}
+    headers = {"x-api-key": NOW_API_KEY, "Content-Type": "application/json"}
+
     data = {
         "price_amount": price,
         "price_currency": "usd",
-        "pay_currency": config["payment_currency"],
+        "pay_currency": "ltc",
         "order_id": str(random.randint(1000,9999)),
-        "order_description": f"{product} purchase by {buyer_id}",
-        "ipn_callback_url": "https://autobuy-production.up.railway.app/webhook"
+        "order_description": f"{product} {user_id}",
+        "ipn_callback_url": config["webhook_url"]
     }
-    res = requests.post(url, json=data, headers=headers)
-    return res.json()["invoice_url"]
 
-# === Flask webhook ===
+    res = requests.post(url, json=data, headers=headers)
+    return res.json().get("invoice_url")
+
+# === PAYMENT HANDLER ===
+async def handle_payment(data):
+    try:
+        order_id = data.get("order_id")
+        if order_id in processed_orders:
+            return
+        processed_orders.add(order_id)
+
+        product, user_id = data["order_description"].split()
+        user = await bot.fetch_user(int(user_id))
+        channel = bot.get_channel(order_channels.get(user_id))
+
+        if channel:
+            await channel.send(f"💰 Payment received for **{product}**")
+
+        item = get_stock(product)
+
+        if not item:
+            if channel:
+                await channel.send("❌ Out of stock. Please wait for staff.")
+            return
+
+        embed = discord.Embed(title="✅ Delivered", color=0x00ff99)
+        embed.add_field(name="Account", value=item)
+
+        try:
+            await user.send(embed=embed)
+        except:
+            if channel:
+                await channel.send(f"{user.mention} DMs off, sending here:")
+                await channel.send(embed=embed)
+
+        # AUTO VOUCH
+        uid = str(user_id)
+        vouches[uid] = vouches.get(uid, 0) + 1
+        save_data("data/vouches.json", vouches)
+
+        if channel:
+            await channel.send("✅ Delivered! Closing in 30s...")
+            await asyncio.sleep(30)
+            await channel.delete()
+
+    except Exception as e:
+        print(e)
+
+# === WEBHOOK ===
 app = Flask(__name__)
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
-
     if data.get("payment_status") == "finished":
-        user_id = int(data["order_description"].split()[-1])
-        product = data["order_description"].split()[0]
-
-        stock_file = None
-        if product.lower() == "netflix":
-            stock_file = "stock/netflix.txt"
-        elif product.lower() == "spotify":
-            stock_file = "stock/spotify.txt"
-        elif product.lower() == "canva":
-            stock_file = "stock/canva.txt"
-        elif product.lower() == "chatgpt":
-            stock_file = "stock/chatgpt.txt"
-
-        # ✅ FIXED (IMPORTANT)
-        user = asyncio.run(bot.fetch_user(user_id))
-        asyncio.run(deliver_product(user, product, stock_file))
-
+        bot.loop.create_task(handle_payment(data))
     return "OK"
 
-# === Run Flask ===
-def run_flask():
+def run():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
-Thread(target=run_flask).start()
+Thread(target=run).start()
 
-# === Run bot ===
+# === VOUCH COMMANDS ===
+@bot.tree.command(name="vouch")
+async def vouch(interaction: discord.Interaction, user: discord.Member, amount: int = 1):
+    uid = str(user.id)
+    vouches[uid] = vouches.get(uid, 0) + amount
+    save_data("data/vouches.json", vouches)
+    await interaction.response.send_message("✅ Vouch added", ephemeral=True)
+
+@bot.tree.command(name="vouchtop")
+async def vouchtop(interaction: discord.Interaction):
+    sorted_v = sorted(vouches.items(), key=lambda x: x[1], reverse=True)
+    text = "\n".join([f"{i+1}. <@{uid}> — {count}" for i, (uid, count) in enumerate(sorted_v[:10])])
+    await interaction.response.send_message(text or "No data")
+
+# === RUN ===
 bot.run(TOKEN)
