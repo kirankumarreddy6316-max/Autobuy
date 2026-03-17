@@ -85,10 +85,10 @@ async def panel(interaction: discord.Interaction):
         title="⚡ 〘🤖〙𝗔𝘂𝘁𝗼 𝗕𝘂𝘆",
         description=(
             "Welcome to our automatic purchase system!\n\n"
-            "• Select product\n• Pay\n• Get instantly\n\n"
-            "No refunds after delivery."
+            "🛒 Select product → Pay → Receive instantly\n\n"
+            "⚠️ No refunds after delivery"
         ),
-        color=0x0ff0fc
+        color=0x5865F2
     )
 
     view = discord.ui.View()
@@ -112,9 +112,13 @@ async def panel(interaction: discord.Interaction):
 
 # === BUY PANEL ===
 async def send_buy_panel(channel):
-    embed = discord.Embed(title="Select Product", color=0x0ff0fc)
+    embed = discord.Embed(
+        title="🛒 Select Product",
+        description="Choose what you want to buy",
+        color=0x5865F2
+    )
     await channel.send(embed=embed, view=ProductView())
-    await channel.send("Controls:", view=TicketControls())
+    await channel.send(view=TicketControls())
 
 # === PRODUCT VIEW ===
 class ProductView(discord.ui.View):
@@ -126,17 +130,27 @@ class ProductView(discord.ui.View):
             options=[discord.SelectOption(label=p) for p in prices.keys()]
         )
 
-        async def callback(interaction):
+        async def callback(interaction: discord.Interaction):
+            await interaction.response.defer(thinking=True)
+
             product = select.values[0]
             price = prices[product]
 
             invoice = create_invoice(product, price, interaction.user.id)
             order_channels[str(interaction.user.id)] = interaction.channel.id
 
-            await interaction.response.send_message(
-                f"💳 Pay here:\n{invoice}\n\n⏳ Waiting for payment...",
-                ephemeral=False
+            embed = discord.Embed(
+                title="💳 Payment Created",
+                description=(
+                    f"**Product:** {product}\n"
+                    f"**Price:** ${price}\n\n"
+                    f"🔗 [Pay Here]({invoice})\n\n"
+                    f"⏳ Status: Waiting..."
+                ),
+                color=0x5865F2
             )
+
+            await interaction.followup.send(embed=embed)
 
         select.callback = callback
         self.add_item(select)
@@ -148,15 +162,15 @@ class TicketControls(discord.ui.View):
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.channel.send("❌ Order cancelled")
+        await interaction.channel.send("❌ Cancelled")
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
     @discord.ui.button(label="🔒 Close", style=discord.ButtonStyle.grey)
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
         closed_tickets[interaction.user.id] = interaction.channel.name
-        await interaction.channel.send("🔒 Closing in 10 seconds...")
-        await asyncio.sleep(10)
+        await interaction.channel.send("🔒 Closing...")
+        await asyncio.sleep(5)
         await interaction.channel.delete()
 
 # === REOPEN ===
@@ -164,15 +178,14 @@ class TicketControls(discord.ui.View):
 async def reopen(interaction: discord.Interaction):
     name = closed_tickets.get(interaction.user.id)
     if not name:
-        return await interaction.response.send_message("❌ No ticket", ephemeral=True)
+        return await interaction.response.send_message("No ticket", ephemeral=True)
 
     category = discord.utils.get(interaction.guild.categories, name="TICKETS")
     channel = await interaction.guild.create_text_channel(name=name, category=category)
-
     await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
     await send_buy_panel(channel)
 
-    await interaction.response.send_message("✅ Reopened", ephemeral=True)
+    await interaction.response.send_message("Reopened", ephemeral=True)
 
 # === INVOICE ===
 def create_invoice(product, price, user_id):
@@ -199,38 +212,43 @@ async def handle_payment(data):
             return
         processed_orders.add(order_id)
 
-        product, user_id = data["order_description"].split()
+        parts = data["order_description"].split()
+        user_id = parts[-1]
+        product = " ".join(parts[:-1])
+
         user = await bot.fetch_user(int(user_id))
         channel = bot.get_channel(order_channels.get(user_id))
 
         if channel:
-            await channel.send(f"💰 Payment received for **{product}**")
+            await channel.send(f"💰 Payment confirmed for **{product}**")
 
         item = get_stock(product)
 
         if not item:
             if channel:
-                await channel.send("❌ Out of stock. Please wait for staff.")
+                await channel.send("❌ Out of stock, wait for staff")
             return
 
-        embed = discord.Embed(title="✅ Delivered", color=0x00ff99)
-        embed.add_field(name="Account", value=item)
+        embed = discord.Embed(
+            title="✅ Delivery",
+            description=f"Here is your **{product}**",
+            color=0x00ff99
+        )
+        embed.add_field(name="Details", value=item)
 
         try:
             await user.send(embed=embed)
         except:
             if channel:
-                await channel.send(f"{user.mention} DMs off, sending here:")
                 await channel.send(embed=embed)
 
-        # AUTO VOUCH
         uid = str(user_id)
         vouches[uid] = vouches.get(uid, 0) + 1
         save_data("data/vouches.json", vouches)
 
         if channel:
-            await channel.send("✅ Delivered! Closing in 30s...")
-            await asyncio.sleep(30)
+            await channel.send("✅ Delivered! Closing...")
+            await asyncio.sleep(10)
             await channel.delete()
 
     except Exception as e:
@@ -251,13 +269,13 @@ def run():
 
 Thread(target=run).start()
 
-# === VOUCH COMMANDS ===
+# === VOUCH ===
 @bot.tree.command(name="vouch")
 async def vouch(interaction: discord.Interaction, user: discord.Member, amount: int = 1):
     uid = str(user.id)
     vouches[uid] = vouches.get(uid, 0) + amount
     save_data("data/vouches.json", vouches)
-    await interaction.response.send_message("✅ Vouch added", ephemeral=True)
+    await interaction.response.send_message("Vouch added", ephemeral=True)
 
 @bot.tree.command(name="vouchtop")
 async def vouchtop(interaction: discord.Interaction):
