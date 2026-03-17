@@ -1,12 +1,16 @@
 {
-  "buy_channel": 1483304798127390812,
-  "proof_channel": 1483308484081483806,
-  "vouch_channel": 1483129230085849309,
-  "transcript_channel": 1483129230000000000,
-
-  "auto_adv_role": 1483324100314398883,
-  "auto_adv_channel": 1483324452522557521,
-
   "robux_stock": 9300,
-  "boost_stock": 9
+  "boost_stock": 112,
+  "members_online_stock": 64378,
+  "members_offline_stock": 78378,
+  "auto_adv_role_id": 1483324100314398883,
+  "auto_adv_channel_id": 1483324452522557521,
+  "vouch_channel_id": 1483129230085849309,
+  "transcript_channel_id": 1483308484081483806,
+  "logs_channel_id": 0,
+  "buy_panel_channel_id": 1483304798127390812,
+  "proof_channel_id": 1483308484081483806,
+  "payment_currency": "ltc",
+  "animated_gif_url": "https://cdn.discordapp.com/attachments/1483347023033012380/1483357633196068906/file_0000000095f071faa183f7369827c1f5.png?ex=69ba4bf3&is=69b8fa73&hm=686245ed51fcfbd55945be82e5f469de4468f46dbea85da6ae9be36a9c0b9ded&",
+  "proof_gif_url": "https://media.discordapp.net/attachments/1401055310512259235/1454885879066792207/offer.gif"
 }
