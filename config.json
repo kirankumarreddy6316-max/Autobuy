@@ -1,6 +1,6 @@
 {
-  "token": "YOUR_BOT_TOKEN",
-  "ltc_address": "YOUR_LTC_ADDRESS",
+  "token": "TOKEN_HERE",
+  "ltc_address": "LTC_ADDRESS_HERE",
 
   "buy_channel": 1483304798127390812,
   "proof_channel": 1483308484081483806,
