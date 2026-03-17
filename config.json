@@ -1,7 +1,4 @@
 {
-  "token": "TOKEN_HERE",
-  "ltc_address": "LTC_ADDRESS_HERE",
-
   "buy_channel": 1483304798127390812,
   "proof_channel": 1483308484081483806,
   "vouch_channel": 1483129230085849309,
