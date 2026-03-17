@@ -60,15 +60,21 @@ async def on_ready():
 @bot.tree.command(name="stock")
 async def stock(interaction: discord.Interaction):
     embed = discord.Embed(title="📦 Stock Status", color=0x00ff99)
-    embed.add_field(name="Accounts",
+    embed.add_field(
+        name="Accounts",
         value=f"Netflix: {count_stock('stock/netflix.txt')}\nSpotify: {count_stock('stock/spotify.txt')}\nCanva: {count_stock('stock/canva.txt')}\nChatGPT: {count_stock('stock/chatgpt.txt')}",
-        inline=False)
-    embed.add_field(name="Digital",
+        inline=False
+    )
+    embed.add_field(
+        name="Digital",
         value=f"Robux: {config['robux_stock']}\nBoosts: {config['boost_stock']}",
-        inline=False)
-    embed.add_field(name="Services",
+        inline=False
+    )
+    embed.add_field(
+        name="Services",
         value="Nitro Gen: ∞\nToken Gen: ∞\nCC Gen: ∞\nPayPal Gen: ∞",
-        inline=False)
+        inline=False
+    )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # === /credits command ===
@@ -95,23 +101,27 @@ async def panel(interaction: discord.Interaction):
     embed.set_image(url=config["animated_gif_url"])
 
     view = View()
+
     async def buy_callback(i):
         await i.response.send_message("Select product (system continues…)", ephemeral=True)
 
     btn = Button(label="Buy", style=discord.ButtonStyle.green)
     btn.callback = buy_callback
     view.add_item(btn)
+
     await interaction.response.send_message(embed=embed, view=view)
 
-# === Delivery function (manual or paid) ===
+# === Delivery function ===
 async def deliver_product(user, product, stock_file=None):
     if stock_file:
         item = get_stock_item(stock_file)
     else:
         item = "Unlimited / Auto-generated item"
+
     embed = discord.Embed(title=f"✅ {product} Delivered", color=0x2ecc71)
     embed.add_field(name="Details", value=item, inline=False)
     embed.set_image(url=config["proof_gif_url"])
+
     await user.send(embed=embed)
 
 # === Robux stock update ===
@@ -138,21 +148,22 @@ def create_nowpayment_charge(product, price, buyer_id):
         "pay_currency": config["payment_currency"],
         "order_id": str(random.randint(1000,9999)),
         "order_description": f"{product} purchase by {buyer_id}",
-        "ipn_callback_url": "https://YOUR_RAILWAY_URL/webhook"
+        "ipn_callback_url": "https://autobuy-production.up.railway.app/webhook"
     }
     res = requests.post(url, json=data, headers=headers)
     return res.json()["invoice_url"]
 
-# === Flask webhook for NOWPayments ===
+# === Flask webhook ===
 app = Flask(__name__)
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
-    if data["payment_status"] == "finished":
+
+    if data.get("payment_status") == "finished":
         user_id = int(data["order_description"].split()[-1])
         product = data["order_description"].split()[0]
-        # map product to stock file if needed
+
         stock_file = None
         if product.lower() == "netflix":
             stock_file = "stock/netflix.txt"
@@ -162,14 +173,18 @@ def webhook():
             stock_file = "stock/canva.txt"
         elif product.lower() == "chatgpt":
             stock_file = "stock/chatgpt.txt"
-        asyncio.run(deliver_product(bot.get_user(user_id), product, stock_file))
+
+        # ✅ FIXED (IMPORTANT)
+        user = asyncio.run(bot.fetch_user(user_id))
+        asyncio.run(deliver_product(user, product, stock_file))
+
     return "OK"
 
-# === Run Flask in separate thread for Railway ===
+# === Run Flask ===
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 Thread(target=run_flask).start()
 
-# === Run Discord bot ===
+# === Run bot ===
 bot.run(TOKEN)
