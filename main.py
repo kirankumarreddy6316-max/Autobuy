@@ -1,4 +1,4 @@
- import discord, json, os, random
+import discord, json, os, random
 from discord.ext import commands
 
 intents = discord.Intents.all()
@@ -7,6 +7,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ---------------- CONFIG ----------------
 with open("config.json") as f:
     config = json.load(f)
+
+# Load sensitive info from env variables
+BOT_TOKEN = os.getenv("TOKEN")
+LTC_ADDRESS = os.getenv("LTC_ADDRESS")
 
 # ---------------- DATA ----------------
 def load_data(path):
@@ -137,7 +141,7 @@ class ProductView(discord.ui.View):
 
             async def pay(i):
                 await i.response.send_message(
-                    f"LTC Address: {config['ltc_address']}\nAmount: ${price}",
+                    f"LTC Address: {LTC_ADDRESS}\nAmount: ${price}",
                     ephemeral=True
                 )
 
@@ -178,7 +182,7 @@ class ProductView(discord.ui.View):
                 user = str(i.user.id)
                 if "Members" in product:
                     credits.setdefault(user, {"online":0,"offline":0})
-                    credits[user]["offline"] += int(price)  # Example, adjust per type
+                    credits[user]["offline"] += int(price)  # Example
                     save_data("data/credits.json", credits)
 
                 await i.response.send_message("✅ Delivered check DM", ephemeral=True)
@@ -223,4 +227,4 @@ async def credits_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ---------------- RUN ----------------
-bot.run(os.getenv("TOKEN"))
+bot.run(BOT_TOKEN)
