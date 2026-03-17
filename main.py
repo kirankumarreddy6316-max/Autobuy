@@ -1,7 +1,9 @@
-import discord, json, os, random, requests
+import discord, json, os, random, requests, asyncio
 from discord.ext import commands
 from discord import app_commands
 from discord.ui import Button, View
+from flask import Flask, request
+from threading import Thread
 
 # === Load sensitive keys from environment variables ===
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -36,14 +38,17 @@ def count_stock(file):
         return 0
 
 def get_stock_item(file):
-    with open(file) as f:
-        lines = f.readlines()
-    if not lines:
+    try:
+        with open(file) as f:
+            lines = f.readlines()
+        if not lines:
+            return "Out of Stock"
+        item = lines[0]
+        with open(file, "w") as f:
+            f.writelines(lines[1:])
+        return item.strip()
+    except:
         return "Out of Stock"
-    item = lines[0]
-    with open(file, "w") as f:
-        f.writelines(lines[1:])
-    return item.strip()
 
 # === Ready event ===
 @bot.event
@@ -98,11 +103,14 @@ async def panel(interaction: discord.Interaction):
     view.add_item(btn)
     await interaction.response.send_message(embed=embed, view=view)
 
-# === Delivery function ===
-async def deliver_product(user, product, stock_file):
-    item = get_stock_item(stock_file)
-    embed = discord.Embed(title="✅ Delivered", color=0x2ecc71)
-    embed.add_field(name=product, value=item, inline=False)
+# === Delivery function (manual or paid) ===
+async def deliver_product(user, product, stock_file=None):
+    if stock_file:
+        item = get_stock_item(stock_file)
+    else:
+        item = "Unlimited / Auto-generated item"
+    embed = discord.Embed(title=f"✅ {product} Delivered", color=0x2ecc71)
+    embed.add_field(name="Details", value=item, inline=False)
     embed.set_image(url=config["proof_gif_url"])
     await user.send(embed=embed)
 
@@ -120,7 +128,7 @@ def add_credit(user, amount, type_):
     credits[user][type_] += amount
     save_data("data/credits.json", credits)
 
-# === NOWPayments API create invoice ===
+# === NOWPayments create invoice ===
 def create_nowpayment_charge(product, price, buyer_id):
     url = "https://api.nowpayments.io/v1/invoice"
     headers = {"x-api-key": NOW_API_KEY, "Content-Type":"application/json"}
@@ -130,10 +138,38 @@ def create_nowpayment_charge(product, price, buyer_id):
         "pay_currency": config["payment_currency"],
         "order_id": str(random.randint(1000,9999)),
         "order_description": f"{product} purchase by {buyer_id}",
-        "ipn_callback_url": "https://YOUR_RAILWAY_URL/up.railway.app/webhook"
+        "ipn_callback_url": "https://YOUR_RAILWAY_URL/webhook"
     }
     res = requests.post(url, json=data, headers=headers)
     return res.json()["invoice_url"]
 
-# === Run bot ===
+# === Flask webhook for NOWPayments ===
+app = Flask(__name__)
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+    if data["payment_status"] == "finished":
+        user_id = int(data["order_description"].split()[-1])
+        product = data["order_description"].split()[0]
+        # map product to stock file if needed
+        stock_file = None
+        if product.lower() == "netflix":
+            stock_file = "stock/netflix.txt"
+        elif product.lower() == "spotify":
+            stock_file = "stock/spotify.txt"
+        elif product.lower() == "canva":
+            stock_file = "stock/canva.txt"
+        elif product.lower() == "chatgpt":
+            stock_file = "stock/chatgpt.txt"
+        asyncio.run(deliver_product(bot.get_user(user_id), product, stock_file))
+    return "OK"
+
+# === Run Flask in separate thread for Railway ===
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+Thread(target=run_flask).start()
+
+# === Run Discord bot ===
 bot.run(TOKEN)
