@@ -1,4 +1,5 @@
 {
+  "webhook_url": "https://autobuy-production.up.railway.app/webhook"
   "robux_stock": 9300,
   "boost_stock": 112,
   "members_online_stock": 64378,
